@@ -20,4 +20,4 @@ def test_to_python_value(pg_arr):
     output = [elem for elem in pg_arr.translate(table).split(',')]
     print(output)
     assert output
-    assert all([isinstance(elem, str) for elem in output]
+    assert all([isinstance(elem, str) for elem in output])
