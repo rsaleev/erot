@@ -1,14 +1,13 @@
-from telnetlib import OUTMRK
-from typing import Union, List, Any, Dict, Type
+from copy import deepcopy
+
+from typing import Union, List, Any, Dict, Type, Deque, ChainMap
 
 from datetime import date
 
 from dictdiffer import diff
 
-from collections import namedtuple
+from collections import namedtuple, ChainMap, deque
 
-from pydantic import BaseModel
-from tortoise.models import Model
 
 
 def format_date(value:Union[date,None])->str:
@@ -49,9 +48,52 @@ def compare_records(record_values:Dict, input_values:Dict):
     return output
             
 
-def record_to_dict(record:Any):
-    output = {}
-    for k,v in record.__dict__.items():
-        if not k.startswith('_'):
-            output.update({k:v})
+def kwargs_to_pg_types(arg:Dict[str, Any]):
+    mapping = deepcopy(arg)
+    for k,v in mapping.items():
+        if v and isinstance(v, list):
+            v_pg = fr'{v}'
+            mapping[k] = v_pg.replace('[', '{').replace(']', '}')
+    return mapping 
+
+
+def chainmap_with_unique_keys(arg:List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    chainmap_with_unique_keys _summary_
+
+    Создание массива словарей с уникальными ключами из массива словарей с дублирующимися ключами
+
+
+    Args:
+        arg (List[Dict[str, Any]]): массив словарей с дублирующимися ключами
+
+    Returns:
+        List[Dict[str, Any]]: массив словарей с уникальными значениями
+    """
+
+
+    unique_keys:List[str] = [next(k for k in tuple(elem.keys())) for elem in arg]
+    deque_arr:Deque = deque(arg)
+    last_keys = []
+    output = []
+    container = []
+    while deque_arr:
+        key = next(k for k in tuple(deque_arr[0].keys()))
+        if not key in last_keys:
+            container.append(deque_arr[0])
+            deque_arr.popleft()
+            last_keys.append(key)
+        else:
+            if all([k in unique_keys for k in last_keys]):
+                d = dict(ChainMap(*container))
+                last_keys.clear()
+                container.clear()
+                output.append(d)
+            else:
+                continue
+    else:
+        d = dict(ChainMap(*container))
+        last_keys.clear()
+        container.clear()
+        output.append(d)
     return output
