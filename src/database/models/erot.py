@@ -8,7 +8,7 @@ from tortoise.fields import (CharField, DatetimeField, DateField, TextField,
 from tortoise.models import Model
 from tortoise.functions import Max
 
-from src.database.custom_fields import TextArrayField
+from src.database.custom_fields import NumericArrayField, TextArrayField
 
 MODEL = TypeVar("MODEL", bound="Model")
 
@@ -71,8 +71,8 @@ class Description(ChildModel):
     desc_publication_date = DateField(null=True)
     desc_work_status = IntField(null=True)
     desc_regulation_level = IntField(null=True)
-    desc_act_requisites = CharField(max_length=255)
-    desc_act_text = TextField()
+    desc_act_requisites = TextArrayField(max_length=255)
+    desc_act_text = TextField(null=False)
     desc_valid_to = DateField(null=True)
     desc_validity_status = IntField(null=True)
 
@@ -87,9 +87,9 @@ class Description(ChildModel):
 
 
 class Control(ChildModel):
-    ctrl_objects = TextArrayField(null=True)
-    ctrl_subjects_categories = TextArrayField(null=True)
-    ctrl_subjects_categories_ext = TextArrayField(null=True)
+    ctrl_objects = NumericArrayField(null=False)
+    ctrl_subjects_categories = TextField(null=True)
+    ctrl_subjects_categories_ext = TextField(null=True)
     ctrl_evaluation_form = TextField(null=True)
     ctrl_control_type = IntField(null=True)
     ctrl_data_alter_org = IntField(null=True)
@@ -131,7 +131,7 @@ class Liability(ChildModel):
     lblt_act_article = TextField(null=True)
     lblt_act_clause = TextField(null=True)
     lblt_act_text = TextField(null=True)
-    lblt_organization = TextField(null=False)
+    lblt_organization = NumericArrayField(null=False)
     lblt_subjects = TextArrayField(null=False)
 
     req_guid = OneToOneField('erot.Base',
@@ -161,115 +161,6 @@ class Sanction(ChildModel):
         table_description = "Санкциии за несоблюдение ОТ"
 
 
-class AbstractSanction(ChildModel):
-    """
-    Абстрактная модель без инициалазиции в БД.
-    
-    Включает в себя метод для сохранения данных в БД через модель Sanction
-    """
-    id = IntField(pk=True)
-    snct_subject = TextField(null=False)
-    snct_title = TextField(null=True)
-    snct_content = TextField(null=True)
-    snct_comments = TextField(null=True)
-    req_guid_id = UUIDField()
-
-
-
-    @staticmethod
-    async def _get_last_pk():
-        record_ids = await Sanction.all()
-        try:
-            next_record_id = max(s.id for s in record_ids) + 1
-        except:
-            next_record_id = 1
-        finally:
-            return next_record_id
-
-
-    @staticmethod
-    async def create(**kwargs):
-        """
-        перегрузка метода create(**kwargs) для типа tortose.models.Model
-
-        1. Инициализируется экземляра класса с передачей атрибутов
-        2. Создается обращение к методу create(**kwargs) класса Sanction для реализации записи в БД
-
-        """
-        instance = AbstractSanction()
-        instance._set_kwargs(kwargs)
-        data = dict(
-            ChainMap(*[{
-                f[0]: f[1]
-            } for f in list(instance.__iter__())]))
-        
-        data.update({'id': AbstractSanction._get_last_pk})
-        record = await Sanction.create(**data)
-        return record
-
-    @staticmethod
-    async def get_or_none(*args, **kwargs):
-        record = await Sanction.get_or_none(**kwargs)
-        return record
-
-    async def update_or_create(self):
-        data = {}
-        for k, v in self.__dict__.items():
-            if not k.startswith('_'):
-                data.update({k:v})
-        data.update({'id': AbstractSanction._get_last_pk})
-        await Sanction.update_or_create(**data)
-
-    class Meta:
-        abstract = True
-
-
-class PhysicalSanction(AbstractSanction):
-    """
-    PhysicalSanction 
-
-    модель для соотношения извлекаемых данных с таблицей
-
-    соотносится с данным о санкции в отношении физических лиц
-    """
-    pass
-
-
-class SelfemployedSanction(AbstractSanction):
-    """
-    SelfemployedSanction
-
-    модель для соотношения извлекаемых данных с таблицей
-
-    соотносится с данным о санкции в отношении индивидуальных предпринимателей
-
-
-    """
-    pass
-
-
-class ExecutiveSanction(AbstractSanction):
-    """
-    ExecutiveSanction 
-
-    модель для соотношения извлекаемых данных с таблицей
-
-    соотносится с данным о санкции в отношении должностных лиц
-
-    """
-    pass
-
-
-class JuristicSanction(AbstractSanction):
-    """
-    JuristicSanction 
-
-    модель для соотношения извлекаемых данных с таблицей
-
-    соотносится с данным о санкции в отношении юридических лиц
-
-    """
-    pass
 
 
 class Attribute(ChildModel):
