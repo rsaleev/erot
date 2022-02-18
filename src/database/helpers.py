@@ -8,7 +8,10 @@ from dictdiffer import diff
 
 from collections import namedtuple, ChainMap, deque
 
+from tortoise.models import Model
+import json
 
+from pypika.terms import Array
 
 def format_date(value:Union[date,None])->str:
     """format_date 
@@ -36,26 +39,29 @@ def format_array(value:List[Any])->str:
     """
     return ''.join(value)
 
-def compare_records(record_values:Dict, input_values:Dict):
-    diff_obj = namedtuple('DiffObject', ['column', 'new', 'old'])
+def compare_records(record_values:Union[Dict[str, Any], List[Dict[str, Any]]], input_values:Dict[str, Any]):
+    DiffObj = namedtuple('DiffObject', ['column', 'new', 'old'])
     output = []
     result = list(diff(record_values, input_values))
     for res in result:
         diff_type, key, values = res
         if diff_type == 'change':
-            diff_obj(column=key, old=values[0], new=values[1])
+            diff_obj = DiffObj(column=key, old=values[0], new=values[1])._asdict()
             output.append(diff_obj)
     return output
             
 
-def kwargs_to_pg_types(arg:Dict[str, Any]):
-    mapping = deepcopy(arg)
-    for k,v in mapping.items():
-        if v and isinstance(v, list):
-            v_pg = fr'{v}'
-            mapping[k] = v_pg.replace('[', '{').replace(']', '}')
-    return mapping 
-
+def kwargs_to_pg_types(**kwargs):
+    filter = {}
+    for k, v in kwargs.items():
+        if isinstance(v, list):
+            if all(v):
+                filter[k] = Array(*v)
+            else:
+                filter[k] = None
+        else:
+            filter[k] = v 
+    return filter
 
 def chainmap_with_unique_keys(arg:List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
@@ -97,3 +103,13 @@ def chainmap_with_unique_keys(arg:List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         container.clear()
         output.append(d)
     return output
+
+def model_to_dict(arg:Union[Model, List[Model]]):
+    if isinstance(arg, Model):
+        output = {}
+        for k, v in arg.__dict__.items():
+            if not k.startswith('_'):
+                output.update({k: v})
+        return output
+    elif isinstance(arg, list):
+        return [model_to_dict(a) for a in arg]
