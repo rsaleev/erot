@@ -44,18 +44,15 @@ class Application(celery.Task):
             # подключиться к базе данных
             await Tortoise.init(config=database.CONFIG)
             await Tortoise.generate_schemas()
-            # while True:
             try:
                 obj = self.extractor.extract()
             except StopIteration:
-                pass
+                raise StopIteration
             else:
                 await obj.transform()
-                await obj.map()
                 await self.loader.load(obj)
         # закрыть соединение с БД
-            await Tortoise.close_connections()
-        return 
+        await Tortoise.close_connections()
 
     def run(self, filename:str):
         loop = uvloop.new_event_loop()
