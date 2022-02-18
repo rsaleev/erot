@@ -24,9 +24,9 @@ class ExcelExtractor(DocumentExtractor):
         self.workbook: Workbook
         self.worksheet: Union[Worksheet, ReadOnlyWorksheet]
         self._min_row = 1
-        self._max_row = int(os.environ['SHEET_MAX_ROW'])
+        self._max_row = int(os.environ.get('SHEET_MAX_ROW', '1054000'))
         self._min_col = 1
-        self._max_col = int(os.environ['SHEET_MAX_COL'])
+        self._max_col = int(os.environ.get('SHEET_MAX_COL', '100'))
         self._document: Object
         self._header: Union[Header, None]
 
@@ -158,7 +158,7 @@ class ExcelExtractor(DocumentExtractor):
                 # определение значений по индексу, co смещением на 1
                 attribute.value = row[attribute.document.index-1]          
             # увеличение текущего индекса строки
-            self._min_row = +1
+            self._min_row +=1
             return doc_object
         else:
             self.workbook.close()
