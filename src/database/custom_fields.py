@@ -3,9 +3,15 @@ from typing import Optional, List, Union, Type, Any
 
 from tortoise.models import Model
 from tortoise.fields import Field
+
+from pypika.terms import Term
+from pypika.terms import Array
+from pypika import functions
+from pypika.enums import SqlTypes
 ##############################################
 # массивы PG array для описания полей Tortoise
 ##############################################
+
 
 class TextArrayField(Field, list):
     """TextArrayField
@@ -14,8 +20,13 @@ class TextArrayField(Field, list):
     # объявление типа SQL
     SQL_TYPE = 'TEXT[]'
 
+    skip_to_python_if_native = False
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+    # def function_cast(self, term: Term) -> Term:
+    #     return functions.Cast(term, SqlTypes.VARCHAR)
 
     # перевод в формат БД
     def to_db_value(
@@ -23,14 +34,14 @@ class TextArrayField(Field, list):
     ):
         if value:
             return [str(x) for x in value if not x is None]
-        else:
-            return None
+        return value
 
     # перевод в формат Python3
     def to_python_value(self, value: Any) -> Union[List[str], Any]:
-        table = value.maketrans({'{': '', '}': '', '"': ''})
-        output = [elem for elem in value.translate(table).split(',')]
-        return output
+        if isinstance(value, str):
+            array = json.loads(value.replace("'", '"'))
+            return [x for x in array]
+        return value
 
 
 class NumericArrayField(Field, list):
@@ -39,23 +50,22 @@ class NumericArrayField(Field, list):
     Тип поля: массив значений типа целое число. Соответствует типу PG numeric[]
     """
     # объявление типа SQL
-    SQL_TYPE = 'NUMERIC[]'
+    SQL_TYPE = 'INT[]'
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     # перевод в формат БД
-    def to_db_value(self, value: List[Union[float, None]],
-                    instance: "Union[Type[Model], Model]") -> Optional[List[Union[float, None]]]:
-        return [x for x in value if not x is None]
+    def to_db_value(self, value: List[Union[int, None]],
+                    instance: "Union[Type[Model], Model]") -> Optional[List[Union[int, None]]]:
+        if value:
+            return [x for x in value if not x is None]
+        return value
 
     # перевод в формат Python3
-    def to_python_value(self, value: Any) -> Union[List[float], list]:
-        table = value.maketrans({'{': '', '}': '', '"': ''})
-        output = []
-        try:
-            output = [float(elem)
-                      for elem in value.translate(table).split(',')]
-        except (ValueError, AttributeError):
-            pass
-        return output
+    def to_python_value(self, value: Any) -> Union[List[int], list]:
+        if isinstance(value, str):
+            array = json.loads(value.replace("'", '"'))
+            return [int(x) for x in array]
+        return value
+
