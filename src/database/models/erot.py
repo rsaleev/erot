@@ -1,52 +1,28 @@
-from typing import TypeVar
-
-from collections import ChainMap
-
 from tortoise.fields import (CharField, DatetimeField, DateField, TextField,
                              UUIDField, ReverseRelation, IntField,
-                             OneToOneField, ForeignKeyField, JSONField)
+                             OneToOneField, ForeignKeyField)
 from tortoise.models import Model
-from tortoise.functions import Max
 
 from src.database.custom_fields import NumericArrayField, TextArrayField
 
-MODEL = TypeVar("MODEL", bound="Model")
+from src.database.helpers import kwargs_to_pg_types
 
 
-class ParentModel(Model):
+class ErotModel(Model):
 
-    id = IntField(pk=True)
-    req_guid = UUIDField(null=False, index=True, unique=True)
+    @classmethod
+    async def get(cls, **kwargs):
+        return await super().get(**kwargs_to_pg_types(**kwargs))
 
-    def get_fk(self):
-        return {'req_guid_id': self.req_guid}
-
-    class Meta:
-        asbstract = True
-
-    class PydanticMeta:
-        exclude = ["id"]
-
-
-class ChildModel(Model):
-
-    id = IntField(pk=True)
-
-    def to_dict(self):
-        output = {}
-        for k, v in self.__dict__.items():
-            if not k.startswith('_'):
-                output.update({k: v})
-        return output
+    @classmethod
+    async def get_or_none(cls, **kwargs):
+        return await super().get_or_none(**kwargs_to_pg_types(**kwargs))
 
     class Meta:
-        asbstract = True
-
-    class PydanticMeta:
-        exclude = ["id"]
+        abstract = True
 
 
-class Base(ParentModel):
+class Base(Model):
     req_id = CharField(max_length=20, unqiue=True, index=True, null=False)
     req_content = TextField(null=False)
     created = DatetimeField(auto_now_add=True, index=True)
@@ -62,11 +38,10 @@ class Base(ParentModel):
 
     class Meta:
         app = 'erot'
-        table = 'req_base'
         table_description = "Основные данные ОТ"
 
 
-class Description(ChildModel):
+class Description(ErotModel):
     desc_publication_status = IntField(null=True)
     desc_publication_date = DateField(null=True)
     desc_work_status = IntField(null=True)
@@ -82,12 +57,11 @@ class Description(ChildModel):
 
     class Meta:
         app = 'erot'
-        table = 'req_description'
         table_description = "Описание ОТ"
 
 
-class Control(ChildModel):
-    ctrl_objects = NumericArrayField(null=False)
+class Control(ErotModel):
+    ctrl_objects = TextField(null=False)
     ctrl_subjects_categories = TextField(null=True)
     ctrl_subjects_categories_ext = TextField(null=True)
     ctrl_evaluation_form = TextField(null=True)
@@ -102,11 +76,10 @@ class Control(ChildModel):
 
     class Meta:
         app = 'erot'
-        table = 'req_control'
         table_description = "Контрольно-надзорная деятельность"
 
 
-class Compliance(ChildModel):
+class Compliance(ErotModel):
     cmpl_act_type = TextField(null=False)
     cmpl_act_title = TextField(null=False)
     cmpl_act_text = TextField(null=True)
@@ -122,17 +95,16 @@ class Compliance(ChildModel):
 
     class Meta:
         app = 'erot'
-        table = 'req_compliance'
         table_description = "Соответствие ОТ"
 
 
-class Liability(ChildModel):
+class Liability(Model):
     lblt_act_title = TextField(null=False)
-    lblt_act_article = TextField(null=True)
-    lblt_act_clause = TextField(null=True)
+    lblt_act_article = TextField(null=False)
+    lblt_act_clause = TextField(null=False)
     lblt_act_text = TextField(null=True)
-    lblt_organization = NumericArrayField(null=False)
-    lblt_subjects = TextArrayField(null=False)
+    lblt_organization = NumericArrayField(null=True)
+    lblt_subjects = NumericArrayField(null=False)
 
     req_guid = OneToOneField('erot.Base',
                              to_field='req_guid',
@@ -140,13 +112,12 @@ class Liability(ChildModel):
 
     class Meta:
         app = "erot"
-        table = "req_liability"
         table_description = "Ответственность за несоблюдение ОТ"
 
 
-class Sanction(ChildModel):
+class Sanction(Model):
     id = IntField(pk=True)
-    snct_subject = TextField(null=False)
+    snct_subject = IntField(null=False)
     snct_title = TextField(null=True)
     snct_content = TextField(null=True)
     snct_comments = TextField(null=True)
@@ -155,22 +126,91 @@ class Sanction(ChildModel):
                                to_field='req_guid',
                                related_name='sanctions')
 
+    @classmethod
+    async def create(cls, **kwargs):
+        """
+        Sanction.create(cls, **kwargs)
+
+        перезагрузка метода для создания одиночных записей, если в значениях указаны несколько субъектов
+        """
+        if isinstance(kwargs['snct_title'], list):
+            single_data = {}
+            for title in kwargs['snct_title']:
+                single_data['snct_subject'] = kwargs['snct_subject']
+                single_data['snct_title'] = title
+                single_data['snct_content'] = next(
+                    (c.replace(title, '').replace(':', '').strip()
+                     for c in kwargs['snct_content'] if c.rfind(title) > -1),
+                    None)
+                single_data['snct_comments'] =next(
+                    (c.replace(title, '').replace(':', '').strip()
+                     for c in kwargs['snct_comments'] if c.rfind(title) > -1),
+                    None)
+                single_data.update(kwargs['req_guid_id'])
+                await super().create(**single_data)
+        else:
+            await super().create(**kwargs)
+
+
+    @classmethod
+    async def get(cls, **kwargs):
+        if isinstance(['snct_title'], list):
+            output = []
+            single_data = {}
+            for title in kwargs['snct_title']:
+                single_data['snct_subject'] = kwargs['snct_subject']
+                single_data['snct_title'] = title
+                single_data['snct_content'] = next(
+                    (c.replace(title, '').replace(':', '').strip()
+                     for c in kwargs['snct_content'] if c.rfind(title) > -1),
+                    None)
+                single_data['snct_comments'] =next(
+                    (c.replace(title, '').replace(':', '').strip()
+                     for c in kwargs['snct_comments'] if c.rfind(title) > -1),
+                    None)
+                single_data.update(kwargs['req_guid'])
+                output.append(await super().get(**single_data))
+        else:
+            return await super().get(**kwargs)
+        
+
+    @classmethod
+    async def get_or_none(cls, **kwargs):
+        if isinstance(kwargs['snct_title'], list):
+            output = []
+            single_data = {}
+            for title in kwargs['snct_title']:
+                single_data['snct_subject'] = kwargs['snct_subject']
+                single_data['snct_title'] = title
+                single_data['snct_content'] = next(
+                    (c.replace(title, '').replace(':', '').strip()
+                     for c in kwargs['snct_content'] if c.rfind(title) > -1),
+                    None)
+                if kwargs['snct_comments']:
+                    single_data['snct_comments'] =next(
+                        (c.replace(title, '').replace(':', '').strip()
+                        for c in kwargs['snct_comments'] if c.rfind(title) > -1),
+                        None)
+                single_data.update({'req_guid_id':kwargs['req_guid_id']})
+                output.append(await super().get_or_none(**single_data))
+            return output
+        else:
+            return await super().get_or_none(**kwargs)
+                
+
     class Meta:
         app = "erot"
-        table = 'req_sanctions'
         table_description = "Санкциии за несоблюдение ОТ"
 
 
-
-
-class Attribute(ChildModel):
+class Attribute(ErotModel):
     attr_public_relations = TextArrayField(null=True)
     attr_economic_activities = TextArrayField()
     attr_cost_estimate = TextArrayField(null=True)
     attr_documents_list = TextArrayField(null=True)
     attr_org_data_provision = TextField(null=True)
     attr_org_data_provision_ext = TextField(null=True)
-    attr_checklists_links = TextArrayField()
+    attr_checklists_links = TextArrayField(null=True)
     attr_manuals_links = TextArrayField(null=True)
     attr_reports_links = TextArrayField(null=True)
 
@@ -180,7 +220,6 @@ class Attribute(ChildModel):
 
     class Meta:
         app = "erot"
-        table = 'req_attribute'
 
 
 class Updates(Model):
@@ -193,7 +232,6 @@ class Updates(Model):
 
     class Meta:
         app = "erot"
-        table = 'updates'
 
 
 __models__ = [
