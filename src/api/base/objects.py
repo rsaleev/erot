@@ -128,7 +128,7 @@ class Object:
             attr (Attribute): текущий атрибут
         """
         # получить значение атрибута в соответствие со схемой
-        if not attr.mapping or not attr.value:
+        if not attr.mapping:
             return
         for m in attr.mapping:
             try:
@@ -136,6 +136,8 @@ class Object:
             except AttributeError:
                 return
             else:
+                if not input_data:
+                    return
                 if isinstance(input_data, list):
                     result = await asyncio.gather(
                         *[self._get_mapped_value(m, v) for v in input_data])
