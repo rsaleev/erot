@@ -5,22 +5,34 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Module",
+            "name": "Main app",
             "type": "python",
             "request": "launch",
             "module": "src.main",
             "env": {
+                "SHEET_MAX_ROW":"200",
                 "VALIDATION_URL": "http://127.0.0.1:8000/documents/validate",
                 "CATALOGUES_URL": "http://127.0.0.1:8001",
                 "EXCEL_SHEETNAME": "Реестр обязательных требований",
-                "SHEET_MAX_COL": "100",
-                "SHEET_MAX_ROW": "10",
                 "DB_HOST":"127.0.0.1",
                 "DB_PORT":"17002",
                 "DB_USER":"postgres",
                 "DB_PASSWORD":"postgres"
             },
             "args": ["/home/rost/Development/GIS_OK/erot/Реестр_обязательных_требований_21.xlsx"]
+        },
+        {
+            "name": "Migration",
+            "type": "python",
+            "request": "launch",
+            "module": "src.database.migration",
+            "env":{
+                "DB_HOST":"127.0.0.1",
+                "DB_PORT":"17002",
+                "DB_USER":"postgres",
+                "DB_PASSWORD":"postgres"
+            },
+            "args": ["migration"]
         },
         {
             "name": "Python: Current File",
