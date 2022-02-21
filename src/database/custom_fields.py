@@ -57,8 +57,5 @@ class NumericArrayField(Field, list):
         return value
 
     def to_python_value(self, value: Any) -> Optional[List[int]]:
-        if value:
-            array = json.loads(value.replace("'", '"'))
-            return [int(x) for x in array]
         return value
 
