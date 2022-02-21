@@ -23,20 +23,20 @@ class TextArrayField(Field, list):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
- 
+    def function_cast(self, term:Term):
+        return functions.Cast(term, Array)
+
+
     # перевод в формат БД
     def to_db_value(
         self, value: Union[List[Union[str, None]], None], instance: "Union[Type[Model], Model]"
     ):
-        # if value:
-        #     return [str(x) for x in value if not x is None]
+        if value:
+            return [str(x) for x in value if not x is None]
         return value
 
     # перевод в формат Python3
     def to_python_value(self, value: Any) -> Union[List[str], Any]:
-        # if value:
-        #     array = json.loads(value.replace("'", '"'))
-        #     return [x for x in array]
         return value
 
 
@@ -57,9 +57,8 @@ class NumericArrayField(Field, list):
         return value
 
     def to_python_value(self, value: Any) -> Optional[List[int]]:
-        print(value)
-        # if value:
-        #     array = json.loads(value.replace("'", '"'))
-        #     return [int(x) for x in array]
+        if value:
+            array = json.loads(value.replace("'", '"'))
+            return [int(x) for x in array]
         return value
 
