@@ -6,6 +6,8 @@ import asyncio
 from pydantic import BaseModel
 from aiohttp.client import ClientSession
 from tortoise.models import Model as ORMModel
+
+from src.database.models.erot import ErotModel
 from .schema import Mapping, SchemaColumn, Document, Database
 from .orm import ModelDescription
 from .transformer import BaseTransformer
@@ -56,7 +58,7 @@ class Attribute(BaseModel):
             attr_schema (schema.SchemaColumn): схема/описание объекта
         """
         module = import_module(f"src.database.models.erot")
-        model: ORMModel = getattr(module, self.database.orm)
+        model: ErotModel = getattr(module, self.database.orm)
         self.database._model = model
 
     def _get_orm_description(self) -> ModelDescription:

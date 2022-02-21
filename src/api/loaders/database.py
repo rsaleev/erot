@@ -4,11 +4,9 @@ import asyncio
 
 from src.api.base.objects import Attribute, Object
 
-from src.database.helpers import compare_records, chainmap_with_unique_keys, model_to_dict
-from src.database.models.erot import Base, Updates
+from src.database.helpers import chainmap_with_unique_keys
+from src.database.models.erot import Base, Description, ErotModel, Updates, Sanction, Liability
 
-from tortoise.models import Model
-from pypika.terms import Array
 
 
 class DatabaseLoader:
@@ -92,30 +90,21 @@ class DatabaseLoader:
         record, _ = await Base.get_or_create(**values[0])
         return record
 
-    async def _load_child(self, object: Object, model: Model, parent: Base):
+
+    async def _load_child(self, object: Object, model: ErotModel, parent: Base):
         attributes = [
             attr for attr in object.attributes if attr.database._model == model
         ]
         values = self._get_orm_values(attributes)
-        for val in values:
-            val.update({'req_guid_id': parent.req_guid})
-            record = await model.get_or_none(**val)
-            if record:
-                record_values = model_to_dict(record)
-                diffs = compare_records(record_values, val)
-                if diffs:
-                    if isinstance(record, list):
-                        for rec in record:
-                            await rec.update_from_dict(val).save()
-                    else:
-                        await record.update_from_dict(val).save()
-                    await Updates.bulk_create([
-                        Updates(**diff, req_uid=parent.req_guid)
-                        for diff in diffs
-                    ])
-            else:
-                await model.create(**val)
-            
+        for v in values:
+            v.update({'req_guid_id':parent.req_guid})
+            try:
+                await model.update_or_create(**v)
+            except Exception as e:
+                print(model)
+                print(v)
+                raise e
+           
 
     async def load(self, object: Object):
         await object.map()
@@ -123,7 +112,7 @@ class DatabaseLoader:
         children = tuple(
             set([
                 attr.database._model for attr in object.attributes
-                if attr.database._model != Base
+                if attr.database._model != Base and attr.database._model not in [Attribute, Liability]
             ]))
         await asyncio.gather(
             *[self._load_child(object, child, parent) for child in children])

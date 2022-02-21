@@ -39,16 +39,7 @@ def format_array(value:List[Any])->str:
     """
     return ''.join(value)
 
-def compare_records(record_values:Union[Dict[str, Any], List[Dict[str, Any]]], input_values:Dict[str, Any]):
-    DiffObj = namedtuple('DiffObject', ['column', 'new', 'old'])
-    output = []
-    result = list(diff(record_values, input_values))
-    for res in result:
-        diff_type, key, values = res
-        if diff_type == 'change':
-            diff_obj = DiffObj(column=key, old=values[0], new=values[1])._asdict()
-            output.append(diff_obj)
-    return output
+
             
 
 def kwargs_to_pg_types(**kwargs):
@@ -104,12 +95,33 @@ def chainmap_with_unique_keys(arg:List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         output.append(d)
     return output
 
-def model_to_dict(arg:Union[Model, List[Model]]):
-    if isinstance(arg, Model):
-        output = {}
-        for k, v in arg.__dict__.items():
-            if not k.startswith('_'):
-                output.update({k: v})
-        return output
-    elif isinstance(arg, list):
-        return [model_to_dict(a) for a in arg]
+def model_to_dict(arg:Model)->Dict[str, Any]:
+    """
+    model_to_dict
+
+    Возврат значений модели ORM в виде dict
+
+    Args:
+        arg (Union[Model, List[Model]]): значения записи из БД
+
+    Returns:
+        Union[Dict[str, Any], List[Dict[str, Any]]]: массив значений записей из БД
+    """
+    output = {}
+    for k, v in arg.__dict__.items():
+        if not k.startswith('_'):
+            output.update({k: v})
+    return output
+
+
+def compare_records(record_values:Dict[str, Any], input_values:Dict[str, Any]):
+    DiffObj = namedtuple('DiffObject', ['column', 'new', 'old'])
+    output = []
+    result = list(diff(record_values, input_values))
+    for res in result:
+        diff_type, key, values = res
+        if diff_type == 'change':
+            diff_obj = DiffObj(column=key, old=values[0], new=values[1])._asdict()
+            output.append(diff_obj)
+    return output
+   

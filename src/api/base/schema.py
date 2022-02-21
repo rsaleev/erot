@@ -3,13 +3,14 @@ from email.header import Header
 from typing import List, Optional, List, Union, Any, Type
 
 from pydantic import BaseModel, Field
-from pydantic import root_validator, validator
 
 from tortoise.models import Model as ORMModel
 
 from .transformer import BaseTransformer
+
 from .orm import ModelDescription as ORMDescription
 
+from src.database.models.erot import ErotModel
 class Format(BaseModel):
     formatter:str
     options:List[str]
@@ -45,7 +46,7 @@ class Mapping(BaseModel):
 class Database(BaseModel):
     orm:str
     attribute:str
-    _model:ORMModel
+    _model:ErotModel
     _description:ORMDescription
     additional_param:Optional[str]
     additional_attribute:Optional[str]   

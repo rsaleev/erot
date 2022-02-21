@@ -1,28 +1,74 @@
+from typing import Union, List, Any, Tuple
+
+from anyio import wait_all_tasks_blocked
+
 from tortoise.fields import (CharField, DatetimeField, DateField, TextField,
                              UUIDField, ReverseRelation, IntField,
                              OneToOneField, ForeignKeyField)
 from tortoise.models import Model
 
+from tortoise.queryset import QuerySetSingle, QuerySet
+
 from src.database.custom_fields import NumericArrayField, TextArrayField
 
-from src.database.helpers import kwargs_to_pg_types
+from src.database.helpers import kwargs_to_pg_types, compare_records, model_to_dict
 
+import asyncio
+
+import re
 
 class ErotModel(Model):
 
     @classmethod
-    async def get(cls, **kwargs):
-        return await super().get(**kwargs_to_pg_types(**kwargs))
+    def _get_fk(cls):
+        return [
+            name for name, field in cls._meta.fields_map.items()
+            if name in cls._meta.fk_fields
+        ]
 
     @classmethod
-    async def get_or_none(cls, **kwargs):
-        return await super().get_or_none(**kwargs_to_pg_types(**kwargs))
+    async def create_or_update(cls, **kwargs):
+        """
+        create_or_update
+
+        Измененнный метод для обработки массива значений (k:v) на входе или единичного значения (k:v)
+
+        1. Поиск значений в БД
+
+        2.1 Если запись не существует -> создание новой записи
+
+        2.2 Если запись существует:
+            2.2.1 Сверка значений в БД и новых значений 
+            2.2.2 Обновление записи в БД
+            2.2.3 Создание записей в таблице Updates
+            2.2.4 Поиск и обновление записи Base
+        """
+        if cls._get_fk():
+            raise NotImplementedError(
+                "Метод не предназначен для родительской записи")
+        tasks = []
+        record = await super().get_or_none(req_guid_id=kwargs['req_guid_id'])
+        if not record:
+            tasks.append(super().create(**kwargs))
+        else:
+            record_values = model_to_dict(record)
+            if diffs := compare_records(record_values, kwargs):
+                tasks.append(
+                    Updates.bulk_create([
+                        Updates(**diff, req_guid=kwargs['req_guid_id'])
+                        for diff in diffs
+                    ]))
+                record.update_from_dict(kwargs)
+                tasks.append(record.save())
+                parent = await Base.get(req_guid=kwargs['req_guid_id'])
+                tasks.append(parent.save())
+        await asyncio.gather(*tasks)
 
     class Meta:
         abstract = True
 
 
-class Base(Model):
+class Base(ErotModel):
     req_id = CharField(max_length=20, unqiue=True, index=True, null=False)
     req_content = TextField(null=False)
     created = DatetimeField(auto_now_add=True, index=True)
@@ -80,7 +126,7 @@ class Control(ErotModel):
 
 
 class Compliance(ErotModel):
-    cmpl_act_type = TextField(null=False)
+    cmpl_act_type = IntField(null=False)
     cmpl_act_title = TextField(null=False)
     cmpl_act_text = TextField(null=True)
     cmpl_act_approved_org = TextField(null=False)
@@ -98,7 +144,7 @@ class Compliance(ErotModel):
         table_description = "Соответствие ОТ"
 
 
-class Liability(Model):
+class Liability(ErotModel):
     lblt_act_title = TextField(null=False)
     lblt_act_article = TextField(null=False)
     lblt_act_clause = TextField(null=False)
@@ -115,11 +161,14 @@ class Liability(Model):
         table_description = "Ответственность за несоблюдение ОТ"
 
 
-class Sanction(Model):
+class Sanction(ErotModel):
     id = IntField(pk=True)
     snct_subject = IntField(null=False)
     snct_title = TextField(null=True)
     snct_content = TextField(null=True)
+    snct_min = IntField(null=True)
+    snct_max = IntField(null=True)
+    snct_measure = TextField(null=True)
     snct_comments = TextField(null=True)
 
     req_guid = ForeignKeyField('erot.Base',
@@ -127,76 +176,80 @@ class Sanction(Model):
                                related_name='sanctions')
 
     @classmethod
-    async def create(cls, **kwargs):
+    async def create_or_update(cls, **kwargs):
         """
         Sanction.create(cls, **kwargs)
 
         перезагрузка метода для создания одиночных записей, если в значениях указаны несколько субъектов
         """
-        if isinstance(kwargs['snct_title'], list):
+        tasks = []
+        # разбор массива значений на единичные словари
+        for title in kwargs['snct_title']:
+            # создание пустого словаря
             single_data = {}
-            for title in kwargs['snct_title']:
-                single_data['snct_subject'] = kwargs['snct_subject']
-                single_data['snct_title'] = title
-                single_data['snct_content'] = next(
+            # назначение типа субъекта
+            single_data['snct_subject'] = kwargs['snct_subject']
+            # назначение типа санкциии
+            single_data['snct_title'] = title
+            record = await cls.get_or_none(req_guid_id=kwargs['req_guid_id'],
+                                           snct_title=title,
+                                           snct_subject=kwargs['snct_subject'])
+            # мэппинг соотвутствующей санкции:
+            # Административный штраф: от 1000 до 5000 (в рублях)
+            content = next(
+                (c.replace(title, '').replace(':', '').strip()
+                 for c in kwargs['snct_content'] if c.rfind(title) > -1), None)
+            single_data['snct_content'] = content
+            if kwargs['snct_comments']:
+                single_data['snct_comments'] = next(
                     (c.replace(title, '').replace(':', '').strip()
-                     for c in kwargs['snct_content'] if c.rfind(title) > -1),
+                    for c in kwargs['snct_comments'] if c.rfind(title) > -1),
                     None)
-                single_data['snct_comments'] =next(
-                    (c.replace(title, '').replace(':', '').strip()
-                     for c in kwargs['snct_comments'] if c.rfind(title) > -1),
-                    None)
-                single_data.update(kwargs['req_guid_id'])
-                await super().create(**single_data)
-        else:
-            await super().create(**kwargs)
+            # парсинг санкции с разбором на минимальное значение/максимальное и тип калькуляции
+            if content:
+                content_measures = re.match(r"^(?<min>от\s*(?<min_val>\d+))|.*(?<max>до\s*(?<max_val>\d+))|.*(?<measure>\(...*\))$", content)
+                if not content_measures:
+                    raise ValueError
+                single_data['snct_min'] = content_measures.groupdict('min')
+                single_data['snct_max'] = content_measures.groupdict('max')
+                single_data['snct_measure'] = content_measures.groupdict('measure')
+            single_data.update(kwargs['req_guid_id'])
+            if record:
+                if record.snct_min != single_data['snct_min']:
+                    record.update_from_dict({'snct_min':single_data['snct_min']})
+                    tasks.append(Updates.create(old=record.snct_min, new=single_data['snct_min'], column='snct_min'))
+                if record.snct_max !=  single_data['snct_max']:
+                    record.update_from_dict({'snct_max':single_data['snct_max']})
+                    tasks.append(Updates.create(old=record.snct_max, new=single_data['snct_max'], column='snct_max'))
+                if record.snct_measure !=  single_data['snct_measure']:
+                    record.update_from_dict({'snct_measure':single_data['snct_measure']})
+                    tasks.append(Updates.create(old=record.snct_measure, new=single_data['snct_measure'], column='snct_measure'))
+                tasks.append(record.save())
+            else:
+                tasks.append(super().create(**single_data))
+        await asyncio.gather(*tasks)
 
-
-    @classmethod
-    async def get(cls, **kwargs):
-        if isinstance(['snct_title'], list):
-            output = []
-            single_data = {}
-            for title in kwargs['snct_title']:
-                single_data['snct_subject'] = kwargs['snct_subject']
-                single_data['snct_title'] = title
-                single_data['snct_content'] = next(
-                    (c.replace(title, '').replace(':', '').strip()
-                     for c in kwargs['snct_content'] if c.rfind(title) > -1),
-                    None)
-                single_data['snct_comments'] =next(
-                    (c.replace(title, '').replace(':', '').strip()
-                     for c in kwargs['snct_comments'] if c.rfind(title) > -1),
-                    None)
-                single_data.update(kwargs['req_guid'])
-                output.append(await super().get(**single_data))
-        else:
-            return await super().get(**kwargs)
-        
-
-    @classmethod
-    async def get_or_none(cls, **kwargs):
-        if isinstance(kwargs['snct_title'], list):
-            output = []
-            single_data = {}
-            for title in kwargs['snct_title']:
-                single_data['snct_subject'] = kwargs['snct_subject']
-                single_data['snct_title'] = title
-                single_data['snct_content'] = next(
-                    (c.replace(title, '').replace(':', '').strip()
-                     for c in kwargs['snct_content'] if c.rfind(title) > -1),
-                    None)
-                if kwargs['snct_comments']:
-                    single_data['snct_comments'] =next(
-                        (c.replace(title, '').replace(':', '').strip()
-                        for c in kwargs['snct_comments'] if c.rfind(title) > -1),
-                        None)
-                single_data.update({'req_guid_id':kwargs['req_guid_id']})
-                output.append(await super().get_or_none(**single_data))
-            return output
-        else:
-            return await super().get_or_none(**kwargs)
-                
+    # @classmethod
+    # async def get_or_none(cls, **kwargs):
+    #     tasks = []
+    #     if kwargs['snct_title']:
+    #         for title in kwargs['snct_title']:
+    #             single_data = {}
+    #             single_data['snct_subject'] = kwargs['snct_subject']
+    #             single_data['snct_title'] = title
+    #             single_data['snct_content'] = next(
+    #                 (c.replace(title, '').replace(':', '').strip()
+    #                  for c in kwargs['snct_content'] if c.rfind(title) > -1),
+    #                 None)
+    #             if kwargs['snct_comments']:
+    #                 single_data['snct_comments'] = next(
+    #                     (c.replace(title, '').replace(':', '').strip()
+    #                      for c in kwargs['snct_comments']
+    #                      if c.rfind(title) > -1), None)
+    #             single_data.update({'req_guid_id': kwargs['req_guid_id']})
+    #             tasks.append(super().get_or_none(**single_data))
+    #         return await asyncio.gather(*tasks)
+    #     return
 
     class Meta:
         app = "erot"
@@ -225,10 +278,10 @@ class Attribute(ErotModel):
 class Updates(Model):
     id = IntField(pk=True)
     updated = DatetimeField(auto_now_add=True)
-    old = TextField()
-    new = TextField()
+    old = TextField(null=True)
+    new = TextField(null=True)
     column = TextField()
-    req_uid = UUIDField(unique=False)
+    req_guid = UUIDField(unique=False)
 
     class Meta:
         app = "erot"
