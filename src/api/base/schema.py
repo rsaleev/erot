@@ -1,89 +1,65 @@
+from typing import List, Optional, List, Union, Any, Type, Dict
 
-from email.header import Header
-from typing import List, Optional, List, Union, Any, Type
+from src.api.base.model import AbstractModel
 
-from pydantic import BaseModel, Field
-
-from tortoise.models import Model as ORMModel
-
-from .transformer import BaseTransformer
-
-from .orm import ModelDescription as ORMDescription
+from src.api.base.transformer import BaseTransformer
 
 from src.database.models.erot import ErotModel
-class Format(BaseModel):
-    formatter:str
-    options:List[str]
-    _instance:Type[BaseTransformer]
+
+from pydantic import Field
 
 
-    class Config:
-        arbitrary_types_allowed = True
-        underscore_attrs_are_private = True
-
-
-class Document(BaseModel):
-    regex:str
-    index:int
-    optional:bool
-    format:Union[None, List[Format]]
-
-
-
-    class Config:
-        arbitrary_types_allowed = True
-        underscore_attrs_are_private = True
-
-
-class Mapping(BaseModel):
-    input:str 
-    link:str
-    output:str 
-
-    class Config:
-        arbitrary_types_allowed = True
-
-class Database(BaseModel):
-    orm:str
+class Format(AbstractModel):
+    formatter: str
+    options: List[str]
+    output:Optional[Dict[str, str]]
     attribute:str
-    _model:ErotModel
-    _description:ORMDescription
-    additional_param:Optional[str]
-    additional_attribute:Optional[str]   
 
-    class Config:
-        arbitrary_types_allowed = True
-        underscore_attrs_are_private = True 
 
-class SchemaColumn(BaseModel):
-    name:str 
+
+
+class Document(AbstractModel):
+    regex: str
+    index: int
+    optional: bool
+    format: Union[None, List[Format]]
+
+
+class Mapping(AbstractModel):
+    input: str
+    link: str
+    output: str
+
+    
+class Database(AbstractModel):
+    orm: str
+    attribute: str
+    param: Dict[str, str]
+    format:Optional[List[Format]]
+
+class SchemaColumn(AbstractModel):
+    name: str
     document: Document
-    mapping:Optional[List[Mapping]]
-    database:Optional[Database]
+    mapping: Optional[List[Mapping]]
+    database: Optional[Database]
 
-    class Config:
-        arbitrary_types_allowed = True
+    
+class DocumentSchemaMissingColumns(AbstractModel):
 
-class DocumentSchemaMissingColumns(BaseModel):
+    required: Optional[List[str]]
+    optional: Optional[List[str]]
 
-    required:Optional[List[str]]
-    optional:Optional[List[str]]
+class HeaderAttribute(AbstractModel):
+    name: str
+    optional: bool
+class DocumentSchemaData(AbstractModel):
 
-class DocumentSchemaData(BaseModel):
+    name: str = Field(..., alias='schema')
+    header: Optional[List[HeaderAttribute]]
+    columns: List[SchemaColumn]
+    missing: Optional[DocumentSchemaMissingColumns]
 
-    name:str = Field(..., alias='schema')
-    header:Optional[Header]
-    columns:List[SchemaColumn]
-    missing:Optional[DocumentSchemaMissingColumns]
+class DocumentSchemaResponse(AbstractModel):
 
-    class Config:
-        arbitrary_types_allowed = True
-
-class DocumentSchemaResponse(BaseModel):
-
-    data:Optional[DocumentSchemaData]
-    error:Optional[str]
-
-    class Config:
-        arbitrary_types_allowed = True
-
+    data: Optional[DocumentSchemaData]
+    error: Optional[str]
