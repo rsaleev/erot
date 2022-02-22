@@ -1,8 +1,10 @@
-from abc import ABC, abstractmethod, abstractproperty
+from abc import ABC, abstractmethod
 
 
 class BaseTransformer(ABC):
 
+
+    @classmethod
     @abstractmethod
-    def transform(self, *args, **kwargs):
+    def transform(cls, *args, **kwargs):
         raise NotImplementedError
