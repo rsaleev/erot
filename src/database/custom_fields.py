@@ -32,7 +32,7 @@ class TextArrayField(Field, list):
         self, value: Union[List[Union[str, None]], None], instance: "Union[Type[Model], Model]"
     ):
         if value:
-            return [str(x) for x in value if not x is None]
+            return [str(x) for x in value]
         return value
 
     # перевод в формат Python3
@@ -54,7 +54,10 @@ class NumericArrayField(Field, list):
     def to_db_value(
         self, value: List[int], instance: "Union[Type[Model], Model]"
     ) -> Optional[List[int]]:
-        return value
+        if value:
+            return [int(x) for x in value]
+        else:
+            return 
 
     def to_python_value(self, value: Any) -> Optional[List[int]]:
         return value
