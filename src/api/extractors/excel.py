@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, List
 
 import os
 
@@ -11,7 +11,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from src.api.base.extractor import DocumentExtractor
 from src.api.base.objects import Object
-from src.api.base.schema import DocumentSchemaResponse, Header
+from src.api.base.schema import DocumentSchemaResponse, HeaderAttribute
 from src.api.exceptions import SheetValidationError, WorkbookNotFound
 
 
@@ -28,7 +28,7 @@ class ExcelExtractor(DocumentExtractor):
         self._min_col = 1
         self._max_col = int(os.environ.get('SHEET_MAX_COL', '100'))
         self._document: Object
-        self._header: Union[Header, None]
+        self._header: Union[List[HeaderAttribute], None]
 
     def read(self, filename: str):
         """
