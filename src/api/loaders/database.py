@@ -1,16 +1,37 @@
-from typing import List, Dict, Any
+from audioop import add
+from typing import List, Dict, Any, Type
 
 import asyncio
 
+from importlib import import_module
+
+from tortoise.functions import Max
+
+from functools import lru_cache
+
+
+from src.api.base.objects import Attribute
+from src.api.transformers.database import DatabaseTransformer
 from src.api.base.objects import Attribute, Object
-
 from src.database.helpers import chainmap_with_unique_keys
-from src.database.models.erot import Base, Description, ErotModel, Updates, Sanction, Liability
-
-
+from src.database import models
+from src.database.models.erot import ErotModel, Base, Sanction
+from src.api.mappings.catalogues import CataloguesMapping
 
 class DatabaseLoader:
 
+    def _set_attr_database(self, attribute:Attribute):
+        """
+        Загрузка модулей для атрибута 'database'
+
+
+        Args:
+            attr_schema (schema.SchemaColumn): схема/описание объекта
+        """
+        model: ErotModel = getattr(models, attribute.database.orm)
+        attribute.database.model = model
+
+    
     def _set_attr_value(self, attribute: Attribute) -> Dict[str, Any]:
         """
         Возвращает словарь со значениями для передачи в экземпляр ORM
@@ -22,8 +43,8 @@ class DatabaseLoader:
         Returns:
             Dict[str, Any]: значения в формате k:v для передачи в инициализацию модели
         """
-        # отфилбтровать и убрать None(NULL) значения
-        if isinstance(attribute.value,list):
+        # отфильтровать и убрать None(NULL) значения
+        if isinstance(attribute.value, list):
             vals = [v for v in attribute.value if v]
             # если массив со значениями, то присвоить его как значение объекта
             if vals:
@@ -31,22 +52,10 @@ class DatabaseLoader:
             # если после фильтрации массив пуст, то присвоить нулевое значение
             else:
                 attribute.value = None
-        output = {attribute.database.attribute: attribute.value}
-        # дополнительное значение для создания записи в БД
-        if attribute.database.additional_param and attribute.database.additional_attribute:
-            additional_attribute = attribute.database.additional_attribute
-            additional_value = attribute.__getattribute__(
-                attribute.database.additional_param)
-            if isinstance(additional_value,list):
-                vals = [v for v in additional_value if v]
-                # если массив со значениями, то присвоить его как значение объекта
-                if vals:
-                    additional_value = vals
-                # если после фильтрации массив пуст, то присвоить нулевое значение
-                else:
-                    additional_value = None
-            output.update(
-            {additional_attribute: additional_value})
+        output = dict()
+        for k, v in attribute.database.param.items():
+            output.update({k: attribute.__getattribute__(v)})
+        DatabaseTransformer.transform(attribute, output)
         return output
 
     def _get_orm_values(self,
@@ -66,7 +75,6 @@ class DatabaseLoader:
 
     async def _load_parent(self, object: Object) -> Base:
         """
-        _load_parent
 
         Загрузка базовой записи в БД
 
@@ -84,35 +92,49 @@ class DatabaseLoader:
         attributes = [
             attr for attr in object.attributes if attr.database._model == Base
         ]
-        values = self._get_orm_values(attributes)
-        if len(values) > 1:
-            raise ValueError('Количество значений превышает 1')
-        record, _ = await Base.get_or_create(**values[0])
+        value,  = self._get_orm_values(attributes)
+        record, _ = await Base.get_or_create(**value)
         return record
 
+    async def _load_child(self, object: Object, model: ErotModel,
+                          parent: Base):
+        """
+        Загрузка зависимой модели
 
-    async def _load_child(self, object: Object, model: ErotModel, parent: Base):
+        Используется дополнительный метод create_or_update(**kwargs)
+
+        Метод расширяет функционал tortoise.models.Model
+
+        """
         attributes = [
             attr for attr in object.attributes if attr.database._model == model
         ]
-        values = self._get_orm_values(attributes)
-        for v in values:
-            v.update({'req_guid_id':parent.req_guid})
-            try:
-                await model.update_or_create(**v)
-            except Exception as e:
-                print(model)
-                print(v)
-                raise e
-           
+        value, *additional = self._get_orm_values(attributes)
+        value.update({'req_guid_id': parent.req_guid})
+        await model.create_or_update(**value)
+        if additional:
+            for value in additional:
+                value, *additional = self._get_orm_values(attributes)
+                value.update({'req_guid_id': parent.req_guid})
+
 
     async def load(self, object: Object):
-        await object.map()
+        """
+        Основной процесс загрузки
+
+        1. В атрибутах объекта меняются значения на соответствующие типы для БД
+
+        Args:
+            object (Object): _description_
+        """
+        await CataloguesMapping.map(object)
+        [self._set_attr_database(attr) for attr in object.attributes]
         parent = await self._load_parent(object)
         children = tuple(
             set([
                 attr.database._model for attr in object.attributes
-                if attr.database._model != Base and attr.database._model not in [Attribute, Liability]
+                if attr.database._model != Base
+                and attr.database._model == Sanction
             ]))
         await asyncio.gather(
             *[self._load_child(object, child, parent) for child in children])
