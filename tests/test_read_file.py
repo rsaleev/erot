@@ -40,9 +40,4 @@ async def test_read_and_validate():
     assert object
     assert object.attributes
     assert all([isinstance(attr, Attribute) for attr in object.attributes])
-    for attr in object.attributes:
-        if attr.document.format:
-            for fmt in attr.document.format:
-                assert fmt._instance
-
-            
+    
