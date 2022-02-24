@@ -1,30 +1,25 @@
-from copy import deepcopy
-from importlib import import_module
+from copy import deepcopy, copy
 from typing import Any, List, Optional
-import asyncio
-from attr import attr
+
 from pydantic import BaseModel
 
-from src.database.models.erot import ErotModel
-from .schema import Mapping, SchemaColumn, Document, Database
-from .transformer import BaseTransformer
+from .schema import Database, Document, Mapping, SchemaColumn
 
 
 class Attribute(BaseModel):
     name: str
     value: Optional[Any]
     document: Document
-    database: Database
+    database: Optional[Database]
     mapping: Optional[List[Mapping]]
    
 class Object:
 
+    __slots__=('attributes', 'name')
+
     def __init__(self, name: str):
         self.attributes: List[Attribute] = []
         self.name = name
-
-    def copy(self):
-        return deepcopy(self)
 
     def add_field(self, schema_column: SchemaColumn):
         """
@@ -41,3 +36,5 @@ class Object:
 
     def upd_field(self, schema_column):
         raise NotImplementedError
+
+    
