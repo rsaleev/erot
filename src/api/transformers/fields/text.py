@@ -11,7 +11,8 @@ class TextClear(BaseTransformer):
     Очистка текста от символов, согласно описанному формату по правилам RegExp
     """
 
-    def transform(self, options:List[str], value:Union[str, None])->Union[str, None]:
+    @classmethod
+    def transform(cls, options:List[str], value:Union[str, None])->Union[str, None]:
         if not value:
             return None
         else:
@@ -44,7 +45,7 @@ class TextSplit(BaseTransformer):
         else:
            return re.split(options[0], value)
 
-class TextParser(BaseTransformer):
+class TextParse(BaseTransformer):
     """
     Парсинг текста с выводом результатов: группы указанные в регулярном выражении
     """

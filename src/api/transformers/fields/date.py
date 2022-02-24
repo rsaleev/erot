@@ -13,7 +13,8 @@ from src.api.base.transformer import BaseTransformer
 
 class DateInput(BaseTransformer):
 
-    def transform(self,options:List[str], value: Union[str, None]) -> Union[None, date]:
+    @classmethod
+    def transform(cls, options:List[str], value: Union[str, None]) -> Union[None, date]:
         """
         Args:
             v (str): строка в формате записи даты или иной формат
