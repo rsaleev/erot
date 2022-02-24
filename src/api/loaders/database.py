@@ -1,26 +1,22 @@
-from audioop import add
-from typing import List, Dict, Any, Type
+from typing import List, Dict, Any
 
 import asyncio
 
 from importlib import import_module
 
 from tortoise.functions import Max
-
-from functools import lru_cache
+from src.api.base.mapping import BaseMapper
 
 
 from src.api.base.objects import Attribute
-from src.api.transformers.database import DatabaseTransformer
 from src.api.base.objects import Attribute, Object
 from src.database.helpers import chainmap_with_unique_keys
 from src.database import models
-from src.database.models.erot import ErotModel, Base, Sanction
-from src.api.mappings.catalogues import CataloguesMapping
+from src.database.models.erot import ErotModel, Base
 
 class DatabaseLoader:
 
-    def _set_attr_database(self, attribute:Attribute):
+    def _set_attr_database(self, orm:str):
         """
         Загрузка модулей для атрибута 'database'
 
@@ -28,11 +24,11 @@ class DatabaseLoader:
         Args:
             attr_schema (schema.SchemaColumn): схема/описание объекта
         """
-        model: ErotModel = getattr(models, attribute.database.orm)
-        attribute.database.model = model
-
+        
+        model: ErotModel = getattr(models, orm)
+        return model
     
-    def _set_attr_value(self, attribute: Attribute) -> Dict[str, Any]:
+    async def _set_attr_value(self, attribute: Attribute):
         """
         Возвращает словарь со значениями для передачи в экземпляр ORM
 
@@ -43,22 +39,19 @@ class DatabaseLoader:
         Returns:
             Dict[str, Any]: значения в формате k:v для передачи в инициализацию модели
         """
-        # отфильтровать и убрать None(NULL) значения
-        if isinstance(attribute.value, list):
-            vals = [v for v in attribute.value if v]
-            # если массив со значениями, то присвоить его как значение объекта
-            if vals:
-                attribute.value = vals
-            # если после фильтрации массив пуст, то присвоить нулевое значение
-            else:
-                attribute.value = None
         output = dict()
-        for k, v in attribute.database.param.items():
-            output.update({k: attribute.__getattribute__(v)})
-        DatabaseTransformer.transform(attribute, output)
+        if not attribute.database or not attribute.database.params:
+            raise AttributeError
+        for k,v in attribute.database.params.items():
+            if attribute.mapping:
+                mapping_rules = next(m for m in attribute.mapping if m.input == v)
+                result = await BaseMapper.fetch(mapping_rules, attribute.__getattribute__(mapping_rules.input))
+                output.update({k:result})
+            else:
+                output.update({k: attribute.__getattribute__(v)})
         return output
 
-    def _get_orm_values(self,
+    async def _get_orm_values(self,
                         attributes: List[Attribute]) -> List[Dict[str, Any]]:
         """
         Выгрузка всех значений атрибутов сгрупированных согласно названию модели ORM 
@@ -70,8 +63,11 @@ class DatabaseLoader:
         Returns:
             Dict[str, Any]: словарь со значениями, где ключ это имя атрибута модели
         """
-        values_list = [self._set_attr_value(attr) for attr in attributes]
-        return chainmap_with_unique_keys(values_list)
+        values_list = await asyncio.gather(*[self._set_attr_value(attr) for attr in attributes])
+        orm_values = chainmap_with_unique_keys(values_list)
+
+        return orm_values
+
 
     async def _load_parent(self, object: Object) -> Base:
         """
@@ -90,13 +86,15 @@ class DatabaseLoader:
             Base: запись в БД 
         """
         attributes = [
-            attr for attr in object.attributes if attr.database._model == Base
+            attr for attr in object.attributes if attr.database.__getattribute__('orm') == 'Base'
         ]
-        value,  = self._get_orm_values(attributes)
-        record, _ = await Base.get_or_create(**value)
+        values, *additional = await self._get_orm_values(attributes)
+        record = await Base.get_or_none(req_guid=values['req_guid'])
+        if not record:
+            record = await Base.create(**values)
         return record
-
-    async def _load_child(self, object: Object, model: ErotModel,
+        
+    async def _load_child(self, object: Object, model_name: str,
                           parent: Base):
         """
         Загрузка зависимой модели
@@ -107,15 +105,15 @@ class DatabaseLoader:
 
         """
         attributes = [
-            attr for attr in object.attributes if attr.database._model == model
+            attr for attr in object.attributes if attr.database.__getattribute__('orm') == model_name
         ]
-        value, *additional = self._get_orm_values(attributes)
-        value.update({'req_guid_id': parent.req_guid})
-        await model.create_or_update(**value)
-        if additional:
-            for value in additional:
-                value, *additional = self._get_orm_values(attributes)
-                value.update({'req_guid_id': parent.req_guid})
+        model = next(m for m in models.erot.__models__ if m.__name__ == model_name)
+        values, *additional = await self._get_orm_values(attributes)
+        await model.create_or_update(**values, parent=parent)
+        for v_add in additional:
+            await model.create_or_update(**v_add,parent=parent)
+
+
 
 
     async def load(self, object: Object):
@@ -127,14 +125,12 @@ class DatabaseLoader:
         Args:
             object (Object): _description_
         """
-        await CataloguesMapping.map(object)
-        [self._set_attr_database(attr) for attr in object.attributes]
+        object.attributes = [attr for attr in object.attributes if attr.database]
         parent = await self._load_parent(object)
         children = tuple(
             set([
-                attr.database._model for attr in object.attributes
-                if attr.database._model != Base
-                and attr.database._model == Sanction
+                attr.database.__getattribute__('orm') for attr in object.attributes
+                if attr.database.__getattribute__('orm') != 'Base'
             ]))
         await asyncio.gather(
             *[self._load_child(object, child, parent) for child in children])
