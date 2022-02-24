@@ -1,16 +1,13 @@
-from typing import Union, List
-
 import os
+from copy import copy
+from typing import List, Tuple, Union
 
 from aiohttp import ClientSession
-
-
 from openpyxl import Workbook, load_workbook
-from openpyxl.worksheet._read_only import ReadOnlyWorksheet
+from openpyxl.worksheet._read_only import ReadOnlyCell, ReadOnlyWorksheet
 from openpyxl.worksheet.worksheet import Worksheet
-
 from src.api.base.extractor import DocumentExtractor
-from src.api.base.objects import Object
+from src.api.base.objects import Attribute, Object
 from src.api.base.schema import DocumentSchemaResponse, HeaderAttribute
 from src.api.exceptions import SheetValidationError, WorkbookNotFound
 
@@ -26,7 +23,7 @@ class ExcelExtractor(DocumentExtractor):
         self._min_row = 1
         self._max_row = int(os.environ.get('SHEET_MAX_ROW', '1054000'))
         self._min_col = 1
-        self._max_col = int(os.environ.get('SHEET_MAX_COL', '100'))
+        self._max_col = int(os.environ.get('SHEET_MAX_COL', '1000'))
         self._document: Object
         self._header: Union[List[HeaderAttribute], None]
 
@@ -65,7 +62,7 @@ class ExcelExtractor(DocumentExtractor):
         # отправка запроса
         async with ClientSession() as session:
             async with session.get(url=os.environ['VALIDATION_URL'],
-                                params=params) as r:
+                                   params=params) as r:
                 response = DocumentSchemaResponse(**await r.json())
                 return response
 
@@ -73,7 +70,7 @@ class ExcelExtractor(DocumentExtractor):
         # инициализация структуры
         if not response.data:
             return
-        self._document = Object(response.data.name) 
+        self._document = Object(response.data.name)
         [self._document.add_field(column) for column in response.data.columns]
 
     def _set_header(self, response: DocumentSchemaResponse):
@@ -132,8 +129,12 @@ class ExcelExtractor(DocumentExtractor):
                     break
         if not valid:
             raise SheetValidationError(error)
-    
-    def extract(self) -> Object:
+
+    def _set_value(self, attribute: Attribute, row: Tuple[ReadOnlyCell]):
+        # определение значений по индексу, co смещением на 1
+        attribute.value = row[attribute.document.index - 1]
+
+    def extract(self):
         """
         extract 
 
@@ -145,21 +146,20 @@ class ExcelExtractor(DocumentExtractor):
             Object: [description]
         """
         if self._min_row <= self._max_row:
-            # выборка одной строки из рабочего листа
-            row = next(
-                row for row in self.worksheet.iter_rows(min_row=self._min_row,
-                                                        max_row=self._max_row,
-                                                        min_col=self._min_col,
-                                                        max_col=self._max_col,
-                                                        values_only=True))
-            # преобразование в объект с атрибутами
-            doc_object = self._document.get_copy()
-            for attribute in doc_object.attributes:
-                # определение значений по индексу, co смещением на 1
-                attribute.value = row[attribute.document.index-1]          
-            # увеличение текущего индекса строки
-            self._min_row +=1
-            return doc_object
+            for row in self.worksheet.iter_rows(min_row=self._min_row,
+                                                max_row=self._min_row,
+                                                min_col=self._min_col,
+                                                max_col=self._max_col,
+                                                values_only=True):
+                document = copy(self._document)
+                # преобразование в объект с атрибутами
+                #doc_object = self._document.copy()
+                [self._set_value(attr, row) for attr in document.attributes]
+                # увеличение текущего индекса строки
+                self._min_row += 1
+                return document
         else:
-            self.workbook.close()
-            raise StopIteration('Exhausted')
+            raise StopIteration
+
+    def close(self):
+        self.workbook.close()
