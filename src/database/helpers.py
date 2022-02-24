@@ -1,6 +1,4 @@
-from copy import deepcopy
-
-from typing import Union, List, Any, Dict, Type, Deque, ChainMap
+from typing import Union, List, Any, Dict, Deque, ChainMap, Tuple
 
 from datetime import date
 
@@ -9,7 +7,6 @@ from dictdiffer import diff
 from collections import namedtuple, ChainMap, deque
 
 from tortoise.models import Model
-import json
 
 from pypika.terms import Array
 
@@ -54,7 +51,7 @@ def kwargs_to_pg_types(**kwargs):
             filter[k] = v 
     return filter
 
-def chainmap_with_unique_keys(arg:List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def chainmap_with_unique_keys(arg:Tuple[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     chainmap_with_unique_keys _summary_
 
