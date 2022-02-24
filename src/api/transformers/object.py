@@ -14,8 +14,8 @@ class ObjectTransformer:
                 # получениe класса из модуля
                 Formatter: Type[BaseTransformer] = getattr(
                     transformers, f.formatter)
-                attribute.value = Formatter.transform(f.options,
-                                                      attribute.value)
+                val = attribute.value
+                attribute.value = Formatter.transform(f.options,val)
 
     @classmethod
     def transform(cls, object: Object):
