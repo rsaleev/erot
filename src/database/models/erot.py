@@ -1,17 +1,17 @@
+from enum import unique
+from hashlib import new
 from typing import Union, List, Any, Tuple
 
-from anyio import wait_all_tasks_blocked
 
 from tortoise.fields import (CharField, DatetimeField, DateField, TextField,
                              UUIDField, ReverseRelation, IntField,
                              OneToOneField, ForeignKeyField)
+                             
 from tortoise.models import Model
-
-from tortoise.queryset import QuerySetSingle, QuerySet
 
 from src.database.custom_fields import NumericArrayField, TextArrayField
 
-from src.database.helpers import kwargs_to_pg_types, compare_records, model_to_dict
+from src.database.helpers import compare_records, model_to_dict
 
 import asyncio
 
@@ -36,13 +36,14 @@ class ErotModel(Model):
             2.2.3 Создание записей в таблице Updates
             2.2.4 Поиск и обновление записи Base
         """
+        excluded_keys = ('id', 'parent', 'req_guid_id', 'req_guid')
         tasks = []
         record = await super().get_or_none(req_guid_id=kwargs['parent'].req_guid)
         if not record:
             tasks.append(super().create(**kwargs, req_guid_id=kwargs['parent'].req_guid))
         else:
             record_values = model_to_dict(record)
-            if diffs := compare_records(record_values, kwargs):
+            if diffs := compare_records(record_values, kwargs, exclude=excluded_keys):
                 tasks.append(
                     Updates.bulk_create([
                         Updates(**diff, req_guid=kwargs['parent'].req_guid)
@@ -134,12 +135,12 @@ class Compliance(ErotModel):
 
 
 class Liability(ErotModel):
-    lblt_act_title = TextField(null=False)
-    lblt_act_article = TextField(null=False)
-    lblt_act_clause = TextField(null=False)
+    lblt_act_title = TextField(null=True)
+    lblt_act_article = TextField(null=True)
+    lblt_act_clause = TextField(null=True)
     lblt_act_text = TextField(null=True)
     lblt_organization = NumericArrayField(null=True)
-    lblt_subjects = NumericArrayField(null=False)
+    lblt_subjects = NumericArrayField(null=True)
 
     req_guid = OneToOneField('erot.Base',
                              to_field='req_guid',
@@ -178,13 +179,14 @@ class Sanction(ErotModel):
             2.2.3 Создание записей в таблице Updates
             2.2.4 Поиск и обновление записи Base
         """
+        excluded_keys = ('id', 'parent', 'req_guid_id', 'req_guid')
         tasks = []
         record = await super().get_or_none(req_guid_id=kwargs['parent'].req_guid, snct_subject=kwargs['snct_subject'])
         if not record:
             tasks.append(super().create(**kwargs, req_guid_id=kwargs['parent'].req_guid))
         else:
             record_values = model_to_dict(record)
-            if diffs := compare_records(record_values, kwargs):
+            if diffs := compare_records(record_values, kwargs, exclude=excluded_keys):
                 tasks.append(
                     Updates.bulk_create([
                         Updates(**diff, req_guid=kwargs['parent'].req_guid)

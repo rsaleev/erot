@@ -23,10 +23,7 @@ class BaseMapper(ABC):
 
             if value:
                 # загрузка URL из переменных окружения
-                try:
-                    url = os.environ[f'{mapping.source.upper()}_URL']
-                except KeyError:
-                    return
+                url = os.environ[f'{mapping.source.upper()}_URL']             
                 async with ClientSession(raise_for_status=True) as session:
                     try:
                         async with session.get(
@@ -34,7 +31,7 @@ class BaseMapper(ABC):
                                 # чтение результата
                                 response_data = await response.json()
                                 # получение значения dict по ключу
-                                response_data[mapping.output]
+                                return response_data[mapping.output]
                     except:
                         return 
             return 

@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 import asyncio
 
 from importlib import import_module
+from attr import attr
 
 from tortoise.functions import Max
 from src.api.base.mapping import BaseMapper
@@ -28,6 +29,16 @@ class DatabaseLoader:
         model: ErotModel = getattr(models, orm)
         return model
     
+    async def _get_mapped_value(self, attribute:Attribute, output:dict, key:str, value:Any):
+        if attribute.mapping:
+            if rule:=next((m for m in attribute.mapping if m.input == value),None):
+                result = await BaseMapper.fetch(rule, attribute.__getattribute__(rule.input))
+                output.update({key:result})
+            else:
+                output.update({key:attribute.__getattribute__(value)})
+        else:
+            output.update({key: attribute.__getattribute__(value)})
+
     async def _set_attr_value(self, attribute: Attribute):
         """
         Возвращает словарь со значениями для передачи в экземпляр ORM
@@ -42,13 +53,7 @@ class DatabaseLoader:
         output = dict()
         if not attribute.database or not attribute.database.params:
             raise AttributeError
-        for k,v in attribute.database.params.items():
-            if attribute.mapping:
-                mapping_rules = next(m for m in attribute.mapping if m.input == v)
-                result = await BaseMapper.fetch(mapping_rules, attribute.__getattribute__(mapping_rules.input))
-                output.update({k:result})
-            else:
-                output.update({k: attribute.__getattribute__(v)})
+        await asyncio.gather(*[self._get_mapped_value(attribute, output, key, value) for key, value in attribute.database.params.items()])            
         return output
 
     async def _get_orm_values(self,
@@ -65,7 +70,6 @@ class DatabaseLoader:
         """
         values_list = await asyncio.gather(*[self._set_attr_value(attr) for attr in attributes])
         orm_values = chainmap_with_unique_keys(values_list)
-
         return orm_values
 
 

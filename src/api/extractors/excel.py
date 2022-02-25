@@ -1,6 +1,5 @@
 import os
-from copy import copy
-from typing import List, Tuple, Union
+from typing import Callable, List, Tuple, Union
 
 from aiohttp import ClientSession
 from openpyxl import Workbook, load_workbook
@@ -11,11 +10,15 @@ from src.api.base.objects import Attribute, Object
 from src.api.base.schema import DocumentSchemaResponse, HeaderAttribute
 from src.api.exceptions import SheetValidationError, WorkbookNotFound
 
+from src.api.transformers.excel import ExcelTransformer
+
+import time
+
 
 class ExcelExtractor(DocumentExtractor):
 
     __slots__ = ('workbook', 'worksheet', '_min_row', '_max_row', '_min_col',
-                 '_max_col', '_document', '_header', '_sheetname')
+                 '_max_col', '_document', '_header', '_sheetname', '_transformer', '_filename', '_cur_row')
 
     def __init__(self):
         self.workbook: Workbook
@@ -24,8 +27,10 @@ class ExcelExtractor(DocumentExtractor):
         self._max_row = int(os.environ.get('SHEET_MAX_ROW', '1054000'))
         self._min_col = 1
         self._max_col = int(os.environ.get('SHEET_MAX_COL', '1000'))
+        self._cur_row = 1
         self._document: Object
         self._header: Union[List[HeaderAttribute], None]
+        self._transformer = ExcelTransformer()
 
     def read(self, filename: str):
         """
@@ -42,10 +47,7 @@ class ExcelExtractor(DocumentExtractor):
         # открытие книги/файла
         try:
             self.workbook = load_workbook(filename,
-                                          read_only=True,
-                                          keep_vba=False,
-                                          data_only=True,
-                                          keep_links=False)
+                                           data_only=True,read_only=True)
         except:
             raise WorkbookNotFound(f'Файл {filename} не найден')
 
@@ -98,7 +100,7 @@ class ExcelExtractor(DocumentExtractor):
             except AttributeError:
                 break
 
-    async def validate(self):
+    async def _validate(self):
         """
         Проверка первых 10 строк на соответствие схемам заголовков документов
 
@@ -132,9 +134,11 @@ class ExcelExtractor(DocumentExtractor):
 
     def _set_value(self, attribute: Attribute, row: Tuple[ReadOnlyCell]):
         # определение значений по индексу, co смещением на 1
-        attribute.value = row[attribute.document.index - 1]
+        attribute.value = next(value for idx, value in enumerate(row, start=1) if idx == attribute.document.index)
 
-    def extract(self):
+    async def extract(self, filename:str, callback):
+        self.read(filename)
+        await self._validate()            
         """
         extract 
 
@@ -145,21 +149,19 @@ class ExcelExtractor(DocumentExtractor):
         Returns:
             Object: [description]
         """
-        if self._min_row <= self._max_row:
-            for row in self.worksheet.iter_rows(min_row=self._min_row,
-                                                max_row=self._min_row,
-                                                min_col=self._min_col,
-                                                max_col=self._max_col,
-                                                values_only=True):
-                document = copy(self._document)
-                # преобразование в объект с атрибутами
-                #doc_object = self._document.copy()
-                [self._set_value(attr, row) for attr in document.attributes]
-                # увеличение текущего индекса строки
-                self._min_row += 1
-                return document
-        else:
-            raise StopIteration
-
-    def close(self):
+        for r in self.worksheet.iter_rows(min_row=self._min_row,
+                                     max_row=self._max_row,
+                                     min_col=self._min_col,
+                                     max_col=self._max_col,
+                                     values_only=True):
+            t1 = time.time()
+            document = self._document
+            [self._set_value(attr, r) for attr in document.attributes]
+            self._transformer.transform(document)
+            t2 = time.time()
+            await callback(document)
+            t3 = time.time()
+            print(t2-t1, t3-t2)
         self.workbook.close()
+
+

@@ -1,7 +1,7 @@
 from copy import deepcopy, copy
 from typing import Any, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Extra
 
 from .schema import Database, Document, Mapping, SchemaColumn
 
@@ -12,6 +12,9 @@ class Attribute(BaseModel):
     document: Document
     database: Optional[Database]
     mapping: Optional[List[Mapping]]
+
+    class Config:
+        extra = Extra.allow
    
 class Object:
 
@@ -37,4 +40,6 @@ class Object:
     def upd_field(self, schema_column):
         raise NotImplementedError
 
-    
+    def clear(self):
+        for attr in self.attributes:
+            attr.value = None

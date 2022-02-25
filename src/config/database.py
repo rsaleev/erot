@@ -11,7 +11,9 @@ CONFIG = {
                 "port":os.environ['DB_PORT'],
                 "database": "erot",
                 "schema":"public",
-                "ssl":False
+                "ssl":False,
+                "minsize":5,
+                "maxsize":10
             }
         }
     },

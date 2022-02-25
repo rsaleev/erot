@@ -29,10 +29,10 @@ class TextArrayField(Field, list):
 
     # перевод в формат БД
     def to_db_value(
-        self, value: Union[List[Union[str, None]], None], instance: "Union[Type[Model], Model]"
+        self, value: Union[List[Any], None], instance: "Union[Type[Model], Model]"
     ):
         if value:
-            return [str(x) for x in value]
+            return [str(x) for x in value if not x is None]
         return value
 
     # перевод в формат Python3
@@ -52,10 +52,10 @@ class NumericArrayField(Field, list):
         super().__init__(**kwargs)
 
     def to_db_value(
-        self, value: List[int], instance: "Union[Type[Model], Model]"
+        self, value: Union[List[Any], None], instance: "Union[Type[Model], Model]"
     ) -> Optional[List[int]]:
         if value:
-            return [int(x) for x in value]
+            return [int(x) for x in value if not x is None]
         else:
             return 
 

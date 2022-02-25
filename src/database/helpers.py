@@ -2,7 +2,7 @@ from typing import Union, List, Any, Dict, Deque, ChainMap, Tuple
 
 from datetime import date
 
-from dictdiffer import diff
+import dictdiffer
 
 from collections import namedtuple, ChainMap, deque
 
@@ -92,7 +92,7 @@ def chainmap_with_unique_keys(arg:Tuple[Dict[str, Any]]) -> List[Dict[str, Any]]
         output.append(d)
     return output
 
-def model_to_dict(arg:Model)->Dict[str, Any]:
+def model_to_dict(arg:Model, exclude:Tuple[str, ...]=())->Dict[str, Any]:
     """
     model_to_dict
 
@@ -106,15 +106,16 @@ def model_to_dict(arg:Model)->Dict[str, Any]:
     """
     output = {}
     for k, v in arg.__dict__.items():
-        if not k.startswith('_'):
+        if not k.startswith('_') and not k in exclude:
             output.update({k: v})
     return output
 
 
-def compare_records(record_values:Dict[str, Any], input_values:Dict[str, Any]):
+def compare_records(record_values:Dict[str, Any], input_values:Dict[str, Any], exclude:Tuple[str,...]=()):
+   
     DiffObj = namedtuple('DiffObject', ['column', 'new', 'old'])
     output = []
-    result = list(diff(record_values, input_values))
+    result = list(dictdiffer.diff(record_values, input_values, ignore=exclude))
     for res in result:
         diff_type, key, values = res
         if diff_type == 'change':

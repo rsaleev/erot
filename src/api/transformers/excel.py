@@ -5,7 +5,7 @@ from src.api.base.objects import Attribute, Object
 from src.api.base.transformer import BaseTransformer
 
 
-class ObjectTransformer:
+class ExcelTransformer:
 
     @classmethod
     def _transform_attribute(cls, attribute: Attribute):
@@ -14,8 +14,7 @@ class ObjectTransformer:
                 # получениe класса из модуля
                 Formatter: Type[BaseTransformer] = getattr(
                     transformers, f.formatter)
-                val = attribute.value
-                attribute.value = Formatter.transform(f.options,val)
+                attribute.value = Formatter.transform(f.options,attribute.__getattribute__('value'))
 
     @classmethod
     def transform(cls, object: Object):
